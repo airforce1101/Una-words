@@ -1,7 +1,4 @@
 {
-  "20251226-001": { "spelling": "apple",  "meaning": "蘋果", "tags": ["week_1"], "archived": false },
-  "20251226-002": { "spelling": "banana", "meaning": "香蕉", "tags": ["week_1"], "archived": false },
-  "20251226-003": { "spelling": "cat",    "meaning": "貓咪", "tags": ["week_1"], "archived": false },
-  "20251226-004": { "spelling": "dog",    "meaning": "狗狗", "tags": ["week_1"], "archived": false }
+  "apple": { "s": "apple", "m": "蘋果", "ipa": "/ˈæpəl/", "archived": false },
+  "cat":   { "s": "cat",   "m": "貓",   "ipa": "/kæt/",   "archived": false }
 }
-
