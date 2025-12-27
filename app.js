@@ -265,7 +265,7 @@ function renderPractice() {
         <div style="margin: 10px 0 6px;">
           <div class="sub">提示：</div>
           <div style="font-size:26px; letter-spacing:1px; margin-top:6px;">
-            <strong>${formatMask(plan.mask)}</strong>
+            <strong class="word-mask">${formatMask(plan.mask)}</strong>
           </div>
           <p class="small">（輸入後按「確認」🙂）</p>
         </div>
