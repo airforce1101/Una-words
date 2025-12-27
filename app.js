@@ -459,3 +459,16 @@ function finishQuiz() {
     renderQuiz();
   };
 }
+// =======================
+// App Entry
+// =======================
+boot().catch(err => {
+  APP.innerHTML = `
+    <div class="wrap">
+      <div class="card">
+        <h2>發生錯誤</h2>
+        <pre>${String(err)}</pre>
+      </div>
+    </div>
+  `;
+});
