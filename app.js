@@ -1,8 +1,7 @@
 // =======================
-// Una Words - v0.5.0 (Kid Pink + Confirm)
-// - Practice: typing + mask, confirm-only advance, max 2 hints, A/B hint style
-// - Quiz: 4-choice, confirm-only grade, no vibration, positive zh-TW
-// - Data: meta/library/packs from /data, progress in LocalStorage
+// Una Words - v0.6.0 (Score Quiz)
+// - Practice: Typing + Mask + Hints (No scoring pressure)
+// - Quiz: Typing + Mask + No Hints + Scoring (Starts at 100, -10 per error, >90 to pass)
 // =======================
 
 const APP = document.getElementById("app");
@@ -19,8 +18,8 @@ const LS_KEY = "una_words_progress_v1";
 
 // ---- In-memory runtime ----
 let meta = null;
-let library = null; // object: { id: {s, m, archived, ...}, ... }
-let packs = null;   // array
+let library = null;
+let packs = null;
 let progress = null;
 
 // session
@@ -30,7 +29,7 @@ let session = { packId: null, ids: [], idx: 0, mode: "practice" };
 let practiceState = { hintPlan: {} };
 
 // quiz per-session state
-let quizState = { selected: null, choices: [], locked: false };
+let quizState = { currentScore: 100 };
 
 // ---------------------------
 // Utilities
@@ -93,14 +92,12 @@ async function fetchJSON(url) {
 async function boot() {
   progress = loadProgress();
 
-  // Always check meta on open
   meta = await fetchJSON(DATA.meta);
   const needsUpdate = (meta.dataVersion ?? 0) > (progress.dataVersionSeen ?? 0);
 
   library = await fetchJSON(DATA.library);
   packs = await fetchJSON(DATA.packs);
 
-  // merge: keep local stars/progress; init new ids
   for (const id of Object.keys(library)) ensureWordProgress(id);
 
   if (needsUpdate) {
@@ -108,7 +105,6 @@ async function boot() {
     saveProgress();
   }
 
-  // If selected pack doesn't exist, fallback
   if (!packs.find(p => p.id === progress.selectedPackId) && packs[0]) {
     progress.selectedPackId = packs[0].id;
     saveProgress();
@@ -127,7 +123,6 @@ function expandPackContent(packId) {
   let ids = [];
   if (Array.isArray(pack.content)) ids.push(...pack.content);
 
-  // support include (optional)
   if (Array.isArray(pack.include)) {
     for (const incId of pack.include) {
       const inc = packs.find(p => p.id === incId);
@@ -143,20 +138,22 @@ function buildSession5(mode) {
   const packId = progress.selectedPackId;
   const allIds = expandPackContent(packId);
 
-  // rank: lower score first, then more mistakes
+  // 練習模式：優先選分數低的
   const ranked = allIds
     .map(id => ({ id, p: ensureWordProgress(id) }))
     .sort((a, b) => {
       if (a.p.score !== b.p.score) return a.p.score - b.p.score;
-      if (a.p.wrongCount !== b.p.wrongCount) return b.p.wrongCount - a.p.wrongCount;
-      return b.p.hintCount - a.p.hintCount;
+      return b.p.wrongCount - a.p.wrongCount;
     })
     .map(x => x.id);
 
   const chosen = pickN(ranked, Math.min(5, ranked.length));
+  
   session = { packId, ids: chosen, idx: 0, mode };
+  
+  // Reset states
   practiceState = { hintPlan: {} };
-  quizState = { selected: null, choices: [], locked: false };
+  quizState = { currentScore: 100 }; // 測驗分數從 100 開始
 }
 
 // ---------------------------
@@ -174,12 +171,12 @@ function renderHome() {
         <p class="sub">今天想怎麼開始？</p>
 
         <div class="row" style="margin: 8px 0 10px;">
-          <button class="big" id="btnPractice">🖤 先練習</button>
-          <button class="big" id="btnQuiz">✨ 直接測驗</button>
+          <button class="big" id="btnPractice">📝 先練習</button>
+          <button class="big" id="btnQuiz">💯 考試測驗</button>
         </div>
 
         <details>
-          <summary>🔧 家長設定（選擇考卷範圍）</summary>
+          <summary>🔧 家長設定</summary>
           <div style="margin-top:10px;">
             <label class="sub" style="text-align:left;">目前範圍：</label>
             <select id="packSelect">${packOptions}</select>
@@ -187,11 +184,10 @@ function renderHome() {
               <button class="big" id="btnSavePack">儲存</button>
             </div>
           </div>
-          <p class="small">資料版本：${meta?.dataVersion ?? "?"}｜更新日：${meta?.updatedAt ?? "?"}</p>
+          <p class="small">資料版本：${meta?.dataVersion ?? "?"}</p>
         </details>
 
-        <p class="small">星星：<strong>${progress.stars}</strong> ⭐</p>
-        <p class="small">版本：v0.5.0</p>
+        <p class="small">目前星星：<strong>${progress.stars}</strong> ⭐</p>
       </div>
     </div>
   `;
@@ -203,7 +199,7 @@ function renderHome() {
 
   document.getElementById("btnQuiz").onclick = () => {
     buildSession5("quiz");
-    renderQuiz();
+    renderQuiz(); // 改用新的測驗介面
   };
 
   document.getElementById("btnSavePack").onclick = () => {
@@ -215,7 +211,7 @@ function renderHome() {
 }
 
 // ---------------------------
-// Practice Mode (Typing + Confirm Only)
+// Shared Helper: Mask Logic
 // ---------------------------
 function buildInitialMask(spelling) {
   const n = spelling.length;
@@ -226,16 +222,10 @@ function buildInitialMask(spelling) {
 
 function getHintPlan(wordId, spelling) {
   if (practiceState.hintPlan[wordId]) return practiceState.hintPlan[wordId];
-
-  const type = Math.random() < 0.5 ? "A" : "B"; // A: first letter, B: middle letter
+  const type = Math.random() < 0.5 ? "A" : "B";
   const { mask, revealed } = buildInitialMask(spelling);
-
   practiceState.hintPlan[wordId] = { type, mask, revealed, hintUsed: 0 };
   return practiceState.hintPlan[wordId];
-}
-
-function formatMask(maskArr) {
-  return maskArr.join(" ");
 }
 
 function revealOneMore(plan, spelling) {
@@ -249,13 +239,15 @@ function revealOneMore(plan, spelling) {
   return false;
 }
 
+// ---------------------------
+// Mode 1: Practice (練習模式)
+// - 有提示、不計分、輕鬆練
+// ---------------------------
 function renderPractice() {
   const currentId = session.ids[session.idx];
   const w = library[currentId];
-  // support both schemas: {s,m} or {spelling,meaning}
-  const spellingRaw = w.s ?? w.spelling ?? "";
+  const target = normalizeAnswer(w.s ?? w.spelling ?? "");
   const meaning = w.m ?? w.meaning ?? "";
-  const target = normalizeAnswer(spellingRaw);
 
   const p = ensureWordProgress(currentId);
   const plan = getHintPlan(currentId, target);
@@ -270,30 +262,17 @@ function renderPractice() {
 
         <div style="margin: 10px 0 6px;">
           <div class="sub">提示：</div>
-          <div style="margin-top:6px;">
-            <strong class="word-mask">${formatMask(plan.mask)}</strong>
-          </div>
-          <p class="small">（輸入後按「確認」🙂）</p>
+          <strong class="word-mask">${plan.mask.join(" ")}</strong>
         </div>
 
         <div style="margin-top: 10px;">
-          <label class="sub" for="ans">請輸入英文：</label>
-          <input
-            id="ans"
-            type="text"
-            inputmode="latin"
-            autocomplete="off"
-            autocapitalize="none"
-            autocorrect="off"
-            spellcheck="false"
-            placeholder="在這裡打字…"
-          />
+          <input id="ans" type="text" placeholder="輸入英文..." autocomplete="off">
         </div>
 
         <div class="row" style="margin-top:12px;">
-          <button class="big" id="btnConfirm">✅ 確認</button>
-          <button class="big" id="btnHint">💡 提示一下</button>
-          <button class="big" id="btnHome">🏠 回首頁</button>
+          <button class="big" id="btnConfirm">確認 ✅</button>
+          <button class="big" id="btnHint">提示 💡</button>
+          <button class="big" id="btnHome">回首頁 🏠</button>
         </div>
 
         <p id="feedback"></p>
@@ -305,259 +284,178 @@ function renderPractice() {
   const input = document.getElementById("ans");
   const feedback = document.getElementById("feedback");
 
-  // anti-autofill (Safari)
-  input.value = "";
-  input.setAttribute("name", "ans_" + Date.now());
-  setTimeout(() => input.focus(), 50);
+  input.focus();
 
-  function starFx() {
-    feedback.innerHTML = `太棒了！<span class="star-pop">⭐</span>`;
-    feedback.classList.add("success");
-  }
-
-  function goNextOrReward() {
-    session.idx++;
-    if (session.idx >= session.ids.length) {
-      progress.stars += 1;
-      saveProgress();
-      renderReward("完成啦！🏆", "你拿到 1 顆星星！");
-    } else {
-      renderPractice();
-    }
-  }
-
-  function checkOnlyAdvanceIfCorrect() {
+  // 確認按鈕
+  function check() {
     const user = normalizeAnswer(input.value);
-
     if (!user) {
-      feedback.textContent = "先打一點點也可以🙂";
-      input.focus();
+      feedback.textContent = "請輸入答案 🤔";
       return;
     }
-
     if (user === target) {
-      // update progress
+      feedback.innerHTML = `太棒了！<span class="star-pop">⭐</span>`;
+      feedback.classList.add("success");
       p.score = Math.min(100, (p.score ?? 0) + 10);
       saveProgress();
-
-      // feedback + star
-      starFx();
-
-      // advance AFTER feedback (short delay is ok, but not auto-triggered)
-      setTimeout(() => goNextOrReward(), 250);
+      setTimeout(() => {
+        session.idx++;
+        if (session.idx >= session.ids.length) {
+          progress.stars++;
+          saveProgress();
+          renderReward("完成練習！🏆", "你得到 1 顆星星！");
+        } else {
+          renderPractice();
+        }
+      }, 400);
     } else {
-      feedback.textContent = "差一點～再試一次🙂";
+      feedback.textContent = "差一點，再試試看 💪";
       p.wrongCount = (p.wrongCount ?? 0) + 1;
       saveProgress();
-      input.focus();
     }
   }
 
-  document.getElementById("btnConfirm").onclick = () => checkOnlyAdvanceIfCorrect();
-
-  input.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      checkOnlyAdvanceIfCorrect();
-    }
-  });
-
+  // 提示按鈕
   document.getElementById("btnHint").onclick = () => {
     if (plan.hintUsed >= 2) {
-      feedback.textContent = "已經提示過囉～先試試看🙂";
-      input.focus();
+      feedback.textContent = "提示用完囉！";
       return;
     }
-
-    plan.hintUsed += 1;
-    p.hintCount = (p.hintCount ?? 0) + 1;
-
-    // First hint: reveal A/B
+    plan.hintUsed++;
     if (plan.hintUsed === 1 && plan.revealed.size === 0) {
-      if (plan.type === "A" && target.length > 0) {
-        plan.revealed.add(0);
-        plan.mask[0] = target[0];
-      } else if (target.length > 0) {
-        const mid = Math.floor(target.length / 2);
-        plan.revealed.add(mid);
-        plan.mask[mid] = target[mid];
-      }
+        // Hint 1: Show 1 letter
+        const idx = plan.type === "A" ? 0 : Math.floor(target.length / 2);
+        plan.revealed.add(idx);
+        plan.mask[idx] = target[idx];
     } else {
-      revealOneMore(plan, target);
+        revealOneMore(plan, target);
     }
-
-    // small hidden penalty
     p.score = Math.max(0, (p.score ?? 0) - 5);
-
     saveProgress();
     renderPractice();
   };
 
-  document.getElementById("btnHome").onclick = () => renderHome();
+  document.getElementById("btnConfirm").onclick = check;
+  document.getElementById("btnHome").onclick = renderHome;
+  input.addEventListener("keydown", (e) => { if(e.key==="Enter") check(); });
 }
 
 // ---------------------------
-// Quiz Mode (4-choice + Confirm Only)
+// Mode 2: Quiz (測驗模式)
+// - 介面跟練習一樣 (打字)
+// - 差異：沒有提示按鈕、計分系統 (錯一次扣10分)
 // ---------------------------
-function buildQuizChoices(correctId) {
-  const correct = library[correctId];
-  const correctSpelling = correct.s ?? correct.spelling ?? "";
-  const correctAns = normalizeAnswer(correctSpelling);
-
-  // distractors from current pack first
-  const pool = expandPackContent(progress.selectedPackId)
-    .filter(id => id !== correctId)
-    .map(id => normalizeAnswer(library[id].s ?? library[id].spelling ?? ""))
-    .filter(x => x && x !== correctAns);
-
-  // fallback to whole library
-  if (pool.length < 3) {
-    const all = Object.keys(library)
-      .filter(id => id !== correctId && library[id]?.archived !== true)
-      .map(id => normalizeAnswer(library[id].s ?? library[id].spelling ?? ""))
-      .filter(x => x && x !== correctAns);
-    pool.push(...all);
-  }
-
-  const distract = pickN([...new Set(pool)], 3);
-  const choices = shuffleInPlace([correctAns, ...distract]);
-
-  return choices;
-}
-
 function renderQuiz() {
   const currentId = session.ids[session.idx];
   const w = library[currentId];
+  const target = normalizeAnswer(w.s ?? w.spelling ?? "");
   const meaning = w.m ?? w.meaning ?? "";
-  const correctSpelling = normalizeAnswer(w.s ?? w.spelling ?? "");
-  const p = ensureWordProgress(currentId);
-
-  quizState.selected = null;
-  quizState.locked = false;
-  quizState.choices = buildQuizChoices(currentId);
+  
+  // 建立一個全空的遮罩給使用者看長度 (但不給提示)
+  const mask = Array(target.length).fill("_").join(" ");
 
   APP.innerHTML = `
     <div class="wrap">
       <div class="card">
-        <h2>測驗模式</h2>
+        <h2>測驗考試</h2>
         <p class="sub">第 ${session.idx + 1} / ${session.ids.length} 題</p>
+        <p class="small" style="color:var(--pink)">目前分數：${quizState.currentScore}</p>
         <hr/>
+        
+        <p class="sub">中文：<strong>${meaning}</strong></p>
 
-        <p class="sub">題目：<strong>${meaning}</strong></p>
-        <p class="small">選一個答案，按「確認」🙂</p>
+        <div style="margin: 10px 0 6px;">
+          <div class="sub">長度提示：</div>
+          <strong class="word-mask">${mask}</strong>
+        </div>
 
-        <div class="option-grid" id="grid">
-          ${quizState.choices.map((c, i) => `
-            <button class="option-btn" data-idx="${i}">${c}</button>
-          `).join("")}
+        <div style="margin-top: 10px;">
+          <input id="ans" type="text" placeholder="考試中..." autocomplete="off">
         </div>
 
         <div class="row" style="margin-top:12px;">
-          <button class="big" id="btnConfirm">✅ 確認</button>
-          <button class="big" id="btnHome">🏠 回首頁</button>
+          <button class="big" id="btnConfirm">確認交卷 ✅</button>
+          <button class="big" id="btnHome">放棄 🏠</button>
         </div>
 
-        <p id="feedback"></p>
-        <p class="small">（測驗不會震動，也不會罵人🙂）</p>
+        <p id="feedback" style="min-height:24px;"></p>
+        <p class="small">及格標準：90分 (只能錯1次)</p>
       </div>
     </div>
   `;
 
+  const input = document.getElementById("ans");
   const feedback = document.getElementById("feedback");
-  const grid = document.getElementById("grid");
-  const buttons = [...grid.querySelectorAll(".option-btn")];
 
-  function starFx() {
-    feedback.innerHTML = `太棒了！<span class="star-pop">⭐</span>`;
-    feedback.classList.add("success");
-  }
+  setTimeout(() => input.focus(), 50);
 
-  function goNextOrReward() {
-    session.idx++;
-    if (session.idx >= session.ids.length) {
-      progress.stars += 1;
-      saveProgress();
-      renderReward("太厲害了！🎉", "你完成了這次測驗！");
-    } else {
-      renderQuiz();
-    }
-  }
-
-  function setSelected(idx) {
-    if (quizState.locked) return;
-    quizState.selected = idx;
-    buttons.forEach((b, i) => {
-      b.classList.toggle("selected", i === idx);
-    });
-  }
-
-  buttons.forEach((btn) => {
-    btn.onclick = () => setSelected(Number(btn.dataset.idx));
-  });
-
-  document.getElementById("btnConfirm").onclick = () => {
-    if (quizState.locked) return;
-
-    if (quizState.selected === null) {
-      feedback.textContent = "先選一個答案🙂";
+  function check() {
+    const user = normalizeAnswer(input.value);
+    if (!user) {
+      feedback.textContent = "請作答 🤔";
       return;
     }
 
-    quizState.locked = true;
-
-    const chosen = quizState.choices[quizState.selected];
-    const isCorrect = normalizeAnswer(chosen) === correctSpelling;
-
-    if (isCorrect) {
-      // progress
-      p.score = Math.min(100, (p.score ?? 0) + 15);
-      saveProgress();
-
-      // UI mark
-      buttons[quizState.selected].classList.add("correct");
-      starFx();
-
-      setTimeout(() => goNextOrReward(), 300);
-    } else {
-      // progress
-      p.wrongCount = (p.wrongCount ?? 0) + 1;
-      p.score = Math.max(0, (p.score ?? 0) - 5);
-      saveProgress();
-
-      buttons[quizState.selected].classList.add("wrong");
-      feedback.textContent = "差一點～再想想🙂（可以回去重新選）";
-
-      // allow retry: unlock after short delay, keep same question
+    if (user === target) {
+      // 答對
+      feedback.innerHTML = `正確！💯`;
+      feedback.classList.add("success");
+      
       setTimeout(() => {
-        quizState.locked = false;
-        // keep selection but allow change
-      }, 250);
+        session.idx++;
+        if (session.idx >= session.ids.length) {
+          finishQuiz();
+        } else {
+          renderQuiz();
+        }
+      }, 400);
+    } else {
+      // 答錯
+      quizState.currentScore = Math.max(0, quizState.currentScore - 10); // 扣10分
+      feedback.textContent = "答錯囉！扣 10 分 😱 再試一次";
+      feedback.style.color = "#ef4444";
+      input.value = "";
+      input.focus();
+      
+      // 更新畫面上分數顯示 (簡易重繪分數，不重繪整個DOM以免input失焦)
+      const scoreDisplay = document.querySelector(".small[style*='var(--pink)']");
+      if(scoreDisplay) scoreDisplay.textContent = `目前分數：${quizState.currentScore}`;
     }
-  };
+  }
 
-  document.getElementById("btnHome").onclick = () => renderHome();
+  document.getElementById("btnConfirm").onclick = check;
+  document.getElementById("btnHome").onclick = renderHome;
+  input.addEventListener("keydown", (e) => { if(e.key==="Enter") check(); });
 }
 
-// ---------------------------
-// Reward Screen
-// ---------------------------
-function renderReward(title, msg) {
+function finishQuiz() {
+  const score = quizState.currentScore;
+  const isPass = score >= 90;
+
+  if (isPass) {
+    progress.stars++;
+    saveProgress();
+  }
+
   APP.innerHTML = `
     <div class="wrap">
       <div class="card" style="text-align:center;">
-        <h2>${title}</h2>
-        <p class="sub">${msg}</p>
-        <p class="sub">目前總星星：<strong>${progress.stars} ⭐</strong></p>
-        <div class="row" style="margin-top:12px;">
-          <button class="big" id="home">🏠 回首頁</button>
+        <h2>${isPass ? "恭喜過關！🎉" : "不及格 😢"}</h2>
+        <h1 style="font-size:60px; margin:20px 0;">${score}分</h1>
+        
+        <p class="sub">${isPass ? "太厲害了！拿到 1 顆星星 ⭐" : "要 90 分才及格喔，再試一次吧！"}</p>
+        
+        <div class="row" style="margin-top:20px;">
+          <button class="big" id="home">回首頁 🏠</button>
+          <button class="big" id="retry">再考一次 📝</button>
         </div>
       </div>
     </div>
   `;
-  document.getElementById("home").onclick = () => renderHome();
-}
 
-// start
-boot().catch(err => {
-  APP.innerHTML = `<div class="wrap"><div class="card"><h2>發生錯誤</h2><pre>${String(err)}</pre></div></div>`;
-});
+  document.getElementById("home").onclick = renderHome;
+  document.getElementById("retry").onclick = () => {
+    buildSession5("quiz");
+    renderQuiz();
+  };
+}
