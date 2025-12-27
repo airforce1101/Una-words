@@ -213,8 +213,8 @@ function renderHome() {
   `;
 
   document.getElementById("btnPractice").onclick = () => {
-    buildSession5();
-    renderPracticeStub();
+  buildSession5();
+  renderPractice();
   };
   document.getElementById("btnQuiz").onclick = () => {
     buildSession5();
