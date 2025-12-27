@@ -175,6 +175,11 @@ hr{
   background: linear-gradient(180deg, var(--home1), var(--home2));
   color:#111827;
 }
+/* 新增：紅色按鈕 (給重考/不及格用) */
+#retry{
+  background: linear-gradient(180deg, #fca5a5, #f87171);
+  color:white;
+}
 
 label{
   display:block;
@@ -266,45 +271,9 @@ select{
   padding:10px;
 }
 
-/* 選項按鈕 (給之後的選擇題用) */
-.option-grid{
-  display:grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-  margin-top: 12px;
-  position:relative;
-  z-index:1;
-}
-.option-btn{
-  width:100%;
-  font-size:20px;
-  padding: 14px 12px;
-  border-radius: 18px;
-  border: 2px solid rgba(192,132,252,0.22);
-  background: rgba(255,255,255,0.88);
-  cursor:pointer;
-  box-shadow: 0 6px 14px rgba(0,0,0,0.08);
-  transition: transform 0.08s ease, filter 0.12s ease, border-color 0.12s ease;
-}
-.option-btn:active{ transform: translateY(1px) scale(0.995); }
-.option-btn:hover{ filter: brightness(1.02); }
-.option-btn.selected{
-  border-color: rgba(167,139,250,0.75);
-  box-shadow: 0 0 0 4px rgba(167,139,250,0.18);
-}
-.option-btn.correct{
-  border-color: rgba(34,197,94,0.65);
-  box-shadow: 0 0 0 4px rgba(34,197,94,0.16);
-}
-.option-btn.wrong{
-  border-color: rgba(244,63,94,0.55);
-  box-shadow: 0 0 0 4px rgba(244,63,94,0.14);
-}
-
 /* 手機適配 */
 @media (max-width: 780px){
   h1{ font-size: 32px; }
   h2{ font-size: 26px; }
   .word-mask{ font-size: 30px; letter-spacing: 10px; }
-  .option-grid{ grid-template-columns: 1fr; }
 }
