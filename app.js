@@ -1,5 +1,6 @@
 // =======================
-// Una Words - V0.2 (Data Load + Session)
+// Una Words - V0.3
+// Data Load + Session + Practice Input (B) + Quiz Stub
 // =======================
 
 const APP = document.getElementById("app");
@@ -27,17 +28,14 @@ let session = {
   idx: 0,
 };
 
+// practice per-session state
+let practiceState = {
+  hintPlan: {},   // { [wordId]: { type:'A'|'B', mask:string[], revealed:Set<number>, hintUsed:number } }
+};
+
 // ---------------------------
 // Utilities
 // ---------------------------
-function nowISODate() {
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-
 function normalizeAnswer(s) {
   return String(s ?? "")
     .trim()
@@ -46,7 +44,6 @@ function normalizeAnswer(s) {
 
 function pickN(arr, n) {
   const copy = [...arr];
-  // Fisher–Yates shuffle
   for (let i = copy.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [copy[i], copy[j]] = [copy[j], copy[i]];
@@ -70,7 +67,6 @@ function loadProgress() {
   try {
     return JSON.parse(raw);
   } catch {
-    // 若被寫壞：重置
     return {
       dataVersionSeen: 0,
       selectedPackId: "week_1",
@@ -101,10 +97,9 @@ async function fetchJSON(url) {
 }
 
 async function boot() {
-  // 1) load local progress first
   progress = loadProgress();
 
-  // 2) always check meta on open
+  // always check meta on open
   meta = await fetchJSON(DATA.meta);
 
   const needsUpdate = (meta.dataVersion ?? 0) > (progress.dataVersionSeen ?? 0);
@@ -114,9 +109,8 @@ async function boot() {
     packs = await fetchJSON(DATA.packs);
 
     // merge policy (MVP):
-    // - keep progress
-    // - initialize new ids
-    // - archived stays in progress but won't be served later
+    // - keep local progress
+    // - init new ids
     for (const id of Object.keys(library)) {
       ensureWordProgress(id);
     }
@@ -125,12 +119,12 @@ async function boot() {
     saveProgress();
   }
 
-  // 3) render home
+  // render
   renderHome();
 }
 
 // ---------------------------
-// Session Logic (MVP)
+// Pack + Session Logic
 // ---------------------------
 function expandPackContent(packId) {
   const pack = packs.find(p => p.id === packId);
@@ -158,7 +152,6 @@ function buildSession5() {
   const packId = progress.selectedPackId;
   const allIds = expandPackContent(packId);
 
-  // ranking: prefer low score / never seen (score=0)
   const ranked = allIds
     .map(id => ({ id, p: ensureWordProgress(id) }))
     .sort((a, b) => {
@@ -172,10 +165,13 @@ function buildSession5() {
   const chosen = pickN(ranked, 5);
 
   session = { packId, ids: chosen, idx: 0 };
+
+  // reset practice state for new session
+  practiceState = { hintPlan: {} };
 }
 
 // ---------------------------
-// UI Rendering
+// UI: Home
 // ---------------------------
 function renderHome() {
   const packOptions = packs
@@ -204,7 +200,7 @@ function renderHome() {
               儲存
             </button>
           </div>
-          <p class="small">資料版本：${meta?.dataVersion ?? "?"}｜上次更新：${meta?.updatedAt ?? "?"}</p>
+          <p class="small">資料版本：${meta?.dataVersion ?? "?"}｜更新日：${meta?.updatedAt ?? "?"}</p>
         </details>
 
         <p class="small">星星：${progress.stars} ⭐</p>
@@ -213,9 +209,10 @@ function renderHome() {
   `;
 
   document.getElementById("btnPractice").onclick = () => {
-  buildSession5();
-  renderPractice();
+    buildSession5();
+    renderPractice();
   };
+
   document.getElementById("btnQuiz").onclick = () => {
     buildSession5();
     renderQuizStub();
@@ -229,42 +226,176 @@ function renderHome() {
   };
 }
 
-function renderPracticeStub() {
+// ---------------------------
+// Practice Mode (B) - Real Input
+// ---------------------------
+function buildInitialMask(spelling, type) {
+  const n = spelling.length;
+  const mask = Array(n).fill("_");
+  const revealed = new Set();
+
+  if (n === 0) return { mask, revealed };
+
+  if (type === "A") {
+    // A: reveal first letter
+    mask[0] = spelling[0];
+    revealed.add(0);
+  } else {
+    // B: reveal one middle letter (approx)
+    const mid = Math.floor(n / 2);
+    mask[mid] = spelling[mid];
+    revealed.add(mid);
+  }
+  return { mask, revealed };
+}
+
+function getHintPlan(wordId, spelling) {
+  if (practiceState.hintPlan[wordId]) return practiceState.hintPlan[wordId];
+
+  const type = Math.random() < 0.5 ? "A" : "B";
+  const { mask, revealed } = buildInitialMask(spelling, type);
+
+  practiceState.hintPlan[wordId] = {
+    type,
+    mask,
+    revealed,
+    hintUsed: 0
+  };
+  return practiceState.hintPlan[wordId];
+}
+
+function formatMask(maskArr) {
+  return maskArr.join(" ");
+}
+
+function revealOneMore(plan, spelling) {
+  for (let i = 0; i < spelling.length; i++) {
+    if (!plan.revealed.has(i)) {
+      plan.revealed.add(i);
+      plan.mask[i] = spelling[i];
+      return true;
+    }
+  }
+  return false;
+}
+
+function renderPractice() {
   const currentId = session.ids[session.idx];
   const word = library[currentId];
+  const target = normalizeAnswer(word.spelling);
+
+  const p = ensureWordProgress(currentId);
+  const plan = getHintPlan(currentId, target);
 
   APP.innerHTML = `
     <div class="wrap">
       <div class="card">
-        <h2>練習模式（V0.2 骨架）</h2>
-        <p class="sub">Session：${session.packId}｜第 ${session.idx + 1} / ${session.ids.length} 題</p>
+        <h2>練習模式</h2>
+        <p class="sub">第 ${session.idx + 1} / ${session.ids.length} 題</p>
 
         <hr/>
 
         <p class="sub">中文：<strong>${word.meaning}</strong></p>
-        <p class="small">（下一步才加入：發音 / A/B 提示 / 輸入框 / 答對自動下一題）</p>
+
+        <div style="margin: 10px 0 6px;">
+          <div class="sub">提示：</div>
+          <div style="font-size:26px; letter-spacing:1px; margin-top:6px;">
+            <strong>${formatMask(plan.mask)}</strong>
+          </div>
+          <p class="small">（答對會自動下一題🙂）</p>
+        </div>
+
+        <div style="margin-top: 10px;">
+          <label class="sub" for="ans">請輸入英文：</label>
+          <input
+            id="ans"
+            type="text"
+            inputmode="latin"
+            autocomplete="off"
+            autocapitalize="none"
+            autocorrect="off"
+            spellcheck="false"
+            style="width:100%; font-size:24px; padding:14px; border-radius:14px; border:2px solid #333; margin-top:8px;"
+            placeholder="在這裡打字…"
+          />
+        </div>
 
         <div class="row" style="margin-top:12px;">
-          <button class="big" id="next">下一題</button>
-          <button class="big" id="home">回首頁</button>
+          <button class="big" id="btnHint">提示一下</button>
+          <button class="big" id="btnHome">回首頁</button>
         </div>
+
+        <p id="feedback" class="sub" style="margin-top:12px; min-height:28px;"></p>
+        <p class="small">提示次數：${plan.hintUsed}/2</p>
       </div>
     </div>
   `;
 
-  document.getElementById("next").onclick = () => {
+  const input = document.getElementById("ans");
+  const feedback = document.getElementById("feedback");
+  setTimeout(() => input.focus(), 50);
+
+  function advanceOrReward() {
     session.idx++;
     if (session.idx >= session.ids.length) {
       progress.stars += 1;
       saveProgress();
       renderReward();
     } else {
-      renderPracticeStub();
+      renderPractice();
     }
+  }
+
+  function checkAndAdvance() {
+    const user = normalizeAnswer(input.value);
+    if (!user) return;
+
+    if (user === target) {
+      feedback.textContent = "太棒了！✅";
+      p.score = Math.min(100, (p.score ?? 0) + 10);
+      saveProgress();
+      setTimeout(advanceOrReward, 800);
+    } else {
+      feedback.textContent = "差一點～再試一次🙂";
+      p.wrongCount = (p.wrongCount ?? 0) + 1;
+      saveProgress();
+    }
+  }
+
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      checkAndAdvance();
+    }
+  });
+
+  input.addEventListener("change", checkAndAdvance);
+
+  document.getElementById("btnHint").onclick = () => {
+    if (plan.hintUsed >= 2) {
+      feedback.textContent = "已經提示過囉～先試試看🙂";
+      input.focus();
+      return;
+    }
+    plan.hintUsed += 1;
+    p.hintCount = (p.hintCount ?? 0) + 1;
+
+    revealOneMore(plan, target);
+
+    // optional hidden penalty (no UI display)
+    p.score = Math.max(0, (p.score ?? 0) - 5);
+
+    saveProgress();
+    renderPractice();
   };
-  document.getElementById("home").onclick = () => renderHome();
+
+  document.getElementById("btnHome").onclick = () => renderHome();
 }
 
+// ---------------------------
+// Quiz Mode (C) - Stub for now
+// Next step: real multiple-choice
+// ---------------------------
 function renderQuizStub() {
   const currentId = session.ids[session.idx];
   const word = library[currentId];
@@ -272,13 +403,13 @@ function renderQuizStub() {
   APP.innerHTML = `
     <div class="wrap">
       <div class="card">
-        <h2>測驗模式（V0.2 骨架）</h2>
-        <p class="sub">Session：${session.packId}｜第 ${session.idx + 1} / ${session.ids.length} 題</p>
+        <h2>測驗模式（暫時骨架）</h2>
+        <p class="sub">第 ${session.idx + 1} / ${session.ids.length} 題</p>
 
         <hr/>
 
         <p class="sub">題目：<strong>${word.meaning}</strong></p>
-        <p class="small">（下一步才加入：選擇題選項 / 判斷對錯 / 自動下一題）</p>
+        <p class="small">下一步會做：選擇題選項 + 判斷對錯 + 自動下一題（無震動）</p>
 
         <div class="row" style="margin-top:12px;">
           <button class="big" id="next">下一題</button>
@@ -298,9 +429,13 @@ function renderQuizStub() {
       renderQuizStub();
     }
   };
+
   document.getElementById("home").onclick = () => renderHome();
 }
 
+// ---------------------------
+// Reward
+// ---------------------------
 function renderReward() {
   APP.innerHTML = `
     <div class="wrap">
@@ -321,4 +456,3 @@ function renderReward() {
 boot().catch(err => {
   APP.innerHTML = `<div class="wrap"><div class="card"><h2>發生錯誤</h2><pre>${String(err)}</pre></div></div>`;
 });
-
