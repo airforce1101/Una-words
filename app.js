@@ -1,6 +1,6 @@
 // =======================
-// Una Words - V0.3
-// Data Load + Session + Practice Input (B) + Quiz Stub
+// Una Words - V0.4
+// Data Load + Session + Practice Input (B, masked) + Quiz Stub
 // =======================
 
 const APP = document.getElementById("app");
@@ -22,24 +22,16 @@ let packs = null;   // array
 let progress = null;
 
 // session
-let session = {
-  packId: null,
-  ids: [],
-  idx: 0,
-};
+let session = { packId: null, ids: [], idx: 0 };
 
 // practice per-session state
-let practiceState = {
-  hintPlan: {},   // { [wordId]: { type:'A'|'B', mask:string[], revealed:Set<number>, hintUsed:number } }
-};
+let practiceState = { hintPlan: {} };
 
 // ---------------------------
 // Utilities
 // ---------------------------
 function normalizeAnswer(s) {
-  return String(s ?? "")
-    .trim()
-    .toLowerCase();
+  return String(s ?? "").trim().toLowerCase();
 }
 
 function pickN(arr, n) {
@@ -57,22 +49,12 @@ function pickN(arr, n) {
 function loadProgress() {
   const raw = localStorage.getItem(LS_KEY);
   if (!raw) {
-    return {
-      dataVersionSeen: 0,
-      selectedPackId: "week_1",
-      stars: 0,
-      byId: {}
-    };
+    return { dataVersionSeen: 0, selectedPackId: "week_1", stars: 0, byId: {} };
   }
   try {
     return JSON.parse(raw);
   } catch {
-    return {
-      dataVersionSeen: 0,
-      selectedPackId: "week_1",
-      stars: 0,
-      byId: {}
-    };
+    return { dataVersionSeen: 0, selectedPackId: "week_1", stars: 0, byId: {} };
   }
 }
 
@@ -99,27 +81,27 @@ async function fetchJSON(url) {
 async function boot() {
   progress = loadProgress();
 
-  // always check meta on open
+  // Always check meta on open
   meta = await fetchJSON(DATA.meta);
-
   const needsUpdate = (meta.dataVersion ?? 0) > (progress.dataVersionSeen ?? 0);
 
   if (needsUpdate || !library || !packs) {
     library = await fetchJSON(DATA.library);
     packs = await fetchJSON(DATA.packs);
 
-    // merge policy (MVP):
-    // - keep local progress
-    // - init new ids
-    for (const id of Object.keys(library)) {
-      ensureWordProgress(id);
-    }
+    // merge: keep local stars/progress; init new ids
+    for (const id of Object.keys(library)) ensureWordProgress(id);
 
     progress.dataVersionSeen = meta.dataVersion ?? progress.dataVersionSeen;
     saveProgress();
   }
 
-  // render
+  // If selected pack doesn't exist (e.g. changed), fallback to first pack
+  if (!packs.find(p => p.id === progress.selectedPackId) && packs[0]) {
+    progress.selectedPackId = packs[0].id;
+    saveProgress();
+  }
+
   renderHome();
 }
 
@@ -141,10 +123,7 @@ function expandPackContent(packId) {
     }
   }
 
-  // de-dup
   ids = [...new Set(ids)];
-
-  // filter archived or missing
   return ids.filter(id => library[id] && library[id].archived !== true);
 }
 
@@ -165,9 +144,7 @@ function buildSession5() {
   const chosen = pickN(ranked, 5);
 
   session = { packId, ids: chosen, idx: 0 };
-
-  // reset practice state for new session
-  practiceState = { hintPlan: {} };
+  practiceState = { hintPlan: {} }; // reset per session
 }
 
 // ---------------------------
@@ -227,40 +204,28 @@ function renderHome() {
 }
 
 // ---------------------------
-// Practice Mode (B) - Real Input
+// Practice Mode (B) - Input + Masked Hint
+// Requirements:
+// - Start mask: _ _ _ _ _
+// - Hint A/B random: first hint reveals first or middle letter
+// - Max 2 hints: second hint reveals one more letter
+// - Correct -> auto next (0.8s)
+// - No vibration, positive Traditional Chinese
 // ---------------------------
-function buildInitialMask(spelling, type) {
+function buildInitialMask(spelling) {
   const n = spelling.length;
   const mask = Array(n).fill("_");
   const revealed = new Set();
-
-  if (n === 0) return { mask, revealed };
-
-  if (type === "A") {
-    // A: reveal first letter
-    mask[0] = spelling[0];
-    revealed.add(0);
-  } else {
-    // B: reveal one middle letter (approx)
-    const mid = Math.floor(n / 2);
-    mask[mid] = spelling[mid];
-    revealed.add(mid);
-  }
   return { mask, revealed };
 }
 
 function getHintPlan(wordId, spelling) {
   if (practiceState.hintPlan[wordId]) return practiceState.hintPlan[wordId];
 
-  const type = Math.random() < 0.5 ? "A" : "B";
-  const { mask, revealed } = buildInitialMask(spelling, type);
+  const type = Math.random() < 0.5 ? "A" : "B"; // A: first letter, B: middle letter
+  const { mask, revealed } = buildInitialMask(spelling);
 
-  practiceState.hintPlan[wordId] = {
-    type,
-    mask,
-    revealed,
-    hintUsed: 0
-  };
+  practiceState.hintPlan[wordId] = { type, mask, revealed, hintUsed: 0 };
   return practiceState.hintPlan[wordId];
 }
 
@@ -359,6 +324,7 @@ function renderPractice() {
       feedback.textContent = "差一點～再試一次🙂";
       p.wrongCount = (p.wrongCount ?? 0) + 1;
       saveProgress();
+      // keep input for editing (less frustration)
     }
   }
 
@@ -377,12 +343,26 @@ function renderPractice() {
       input.focus();
       return;
     }
+
     plan.hintUsed += 1;
     p.hintCount = (p.hintCount ?? 0) + 1;
 
-    revealOneMore(plan, target);
+    // First hint: reveal by A/B (first letter or middle letter)
+    if (plan.hintUsed === 1 && plan.revealed.size === 0) {
+      if (plan.type === "A" && target.length > 0) {
+        plan.revealed.add(0);
+        plan.mask[0] = target[0];
+      } else if (target.length > 0) {
+        const mid = Math.floor(target.length / 2);
+        plan.revealed.add(mid);
+        plan.mask[mid] = target[mid];
+      }
+    } else {
+      // Second hint: reveal one more (left-to-right)
+      revealOneMore(plan, target);
+    }
 
-    // optional hidden penalty (no UI display)
+    // Optional hidden penalty (no UI display)
     p.score = Math.max(0, (p.score ?? 0) - 5);
 
     saveProgress();
@@ -394,7 +374,6 @@ function renderPractice() {
 
 // ---------------------------
 // Quiz Mode (C) - Stub for now
-// Next step: real multiple-choice
 // ---------------------------
 function renderQuizStub() {
   const currentId = session.ids[session.idx];
@@ -409,7 +388,7 @@ function renderQuizStub() {
         <hr/>
 
         <p class="sub">題目：<strong>${word.meaning}</strong></p>
-        <p class="small">下一步會做：選擇題選項 + 判斷對錯 + 自動下一題（無震動）</p>
+        <p class="small">下一步會做：選擇題（無震動、答對自動下一題）</p>
 
         <div class="row" style="margin-top:12px;">
           <button class="big" id="next">下一題</button>
