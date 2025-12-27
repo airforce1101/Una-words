@@ -1,4 +1,4 @@
 {
-  "apple": { "s": "apple", "m": "蘋果", "ipa": "/ˈæpəl/", "archived": false },
-  "cat":   { "s": "cat",   "m": "貓",   "ipa": "/kæt/",   "archived": false }
+  "20251228-001": { "s": "apple", "m": "蘋果", "ipa": "/ˈæpəl/", "archived": false },
+  "20251228-002": { "s": "cat",   "m": "貓",   "ipa": "/kæt/",   "archived": false }
 }
