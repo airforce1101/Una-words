@@ -6,8 +6,8 @@
    ========================= */
 
 :root{
-  --bg1:#fff0f7;
-  --bg2:#f3e8ff;
+  --bg1:#fff0f7;          /* 淺粉紅背景 */
+  --bg2:#f3e8ff;          /* 淺紫背景 */
   --bg3:#fdefff;
 
   --card:#ffffff;
@@ -20,10 +20,10 @@
   --lav:#c084fc;
   --lav2:#a78bfa;
 
-  --ok1:#4ade80;
+  --ok1:#4ade80;          /* 綠色確認按鈕 */
   --ok2:#22c55e;
 
-  --hint1:#fde68a;
+  --hint1:#fde68a;        /* 黃色提示按鈕 */
   --hint2:#fbbf24;
 
   --home1:#f3f4f6;
@@ -73,6 +73,7 @@ body{
   overflow:hidden;
 }
 
+/* 背景裝飾光暈 */
 .card::before{
   content:"";
   position:absolute;
@@ -225,6 +226,7 @@ input[type="text"]:focus{
   z-index:1;
 }
 
+/* 動畫效果 */
 .star-pop{
   display:inline-block;
   margin-left: 6px;
@@ -264,7 +266,7 @@ select{
   padding:10px;
 }
 
-/* Quiz */
+/* 選項按鈕 (給之後的選擇題用) */
 .option-grid{
   display:grid;
   grid-template-columns: 1fr 1fr;
@@ -299,7 +301,7 @@ select{
   box-shadow: 0 0 0 4px rgba(244,63,94,0.14);
 }
 
-/* Responsive */
+/* 手機適配 */
 @media (max-width: 780px){
   h1{ font-size: 32px; }
   h2{ font-size: 26px; }
