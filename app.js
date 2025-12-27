@@ -1,6 +1,6 @@
 // =======================
-// Una Words - V0.4.1
-// Fix: iPad auto-submit/auto-advance bug
+// Una Words - V0.4.2 (Confirm-only advance)
+// Fix: No auto-advance. Only advance when user taps Confirm AND answer is correct.
 // =======================
 
 const APP = document.getElementById("app");
@@ -204,12 +204,13 @@ function renderHome() {
 }
 
 // ---------------------------
-// Practice Mode (B) - Input + Masked Hint
-// Fixes in v0.4.1:
-// - Remove 'change' submit (iPad blur can trigger)
-// - Force clear input value on each render
-// - Randomize input 'name' to reduce Safari autofill
-// - Add explicit Submit button
+// Practice Mode (B) - Confirm Only
+// Requirements:
+// - Start mask: _ _ _ _ _
+// - Hint A/B random: first hint reveals first or middle letter
+// - Max 2 hints: second hint reveals one more letter
+// - Advance only when Confirm AND correct (no auto advance)
+// - No vibration, positive Traditional Chinese
 // ---------------------------
 function buildInitialMask(spelling) {
   const n = spelling.length;
@@ -266,7 +267,7 @@ function renderPractice() {
           <div style="font-size:26px; letter-spacing:1px; margin-top:6px;">
             <strong>${formatMask(plan.mask)}</strong>
           </div>
-          <p class="small">（答對會自動下一題🙂）</p>
+          <p class="small">（輸入後按「確認」🙂）</p>
         </div>
 
         <div style="margin-top: 10px;">
@@ -285,7 +286,7 @@ function renderPractice() {
         </div>
 
         <div class="row" style="margin-top:12px;">
-          <button class="big" id="btnSubmit">送出</button>
+          <button class="big" id="btnConfirm">確認</button>
           <button class="big" id="btnHint">提示一下</button>
           <button class="big" id="btnHome">回首頁</button>
         </div>
@@ -299,13 +300,13 @@ function renderPractice() {
   const input = document.getElementById("ans");
   const feedback = document.getElementById("feedback");
 
-  // v0.4.1 anti-autofill/anti-auto-submit
+  // anti-autofill (Safari)
   input.value = "";
   input.setAttribute("name", "ans_" + Date.now());
 
   setTimeout(() => input.focus(), 50);
 
-  function advanceOrReward() {
+  function goNextOrReward() {
     session.idx++;
     if (session.idx >= session.ids.length) {
       progress.stars += 1;
@@ -316,8 +317,9 @@ function renderPractice() {
     }
   }
 
-  function checkAndAdvance() {
+  function checkOnlyAdvanceIfCorrect() {
     const user = normalizeAnswer(input.value);
+
     if (!user) {
       feedback.textContent = "先打一點點也可以🙂";
       input.focus();
@@ -326,30 +328,33 @@ function renderPractice() {
 
     if (user === target) {
       feedback.textContent = "太棒了！✅";
+
+      // update progress
       p.score = Math.min(100, (p.score ?? 0) + 10);
       saveProgress();
-      setTimeout(advanceOrReward, 800);
+
+      // advance ONLY here (no timer)
+      goNextOrReward();
     } else {
       feedback.textContent = "差一點～再試一次🙂";
       p.wrongCount = (p.wrongCount ?? 0) + 1;
       saveProgress();
-      // keep input for editing
       input.focus();
     }
   }
 
-  // Enter to submit (works on desktop & iPad)
+  // Confirm button
+  document.getElementById("btnConfirm").onclick = () => checkOnlyAdvanceIfCorrect();
+
+  // Optional: Enter can also trigger confirm (safe, because no auto timer)
   input.addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
       e.preventDefault();
-      checkAndAdvance();
+      checkOnlyAdvanceIfCorrect();
     }
   });
 
-  // IMPORTANT: do NOT use change/blur/input auto-submit (iPad can misfire)
-
-  document.getElementById("btnSubmit").onclick = () => checkAndAdvance();
-
+  // Hint button
   document.getElementById("btnHint").onclick = () => {
     if (plan.hintUsed >= 2) {
       feedback.textContent = "已經提示過囉～先試試看🙂";
@@ -375,7 +380,7 @@ function renderPractice() {
       revealOneMore(plan, target);
     }
 
-    // Optional hidden penalty (no UI display)
+    // optional hidden penalty
     p.score = Math.max(0, (p.score ?? 0) - 5);
 
     saveProgress();
