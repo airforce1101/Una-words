@@ -1,6 +1,6 @@
 // =======================
-// Una Words - V0.4
-// Data Load + Session + Practice Input (B, masked) + Quiz Stub
+// Una Words - V0.4.1
+// Fix: iPad auto-submit/auto-advance bug
 // =======================
 
 const APP = document.getElementById("app");
@@ -205,12 +205,11 @@ function renderHome() {
 
 // ---------------------------
 // Practice Mode (B) - Input + Masked Hint
-// Requirements:
-// - Start mask: _ _ _ _ _
-// - Hint A/B random: first hint reveals first or middle letter
-// - Max 2 hints: second hint reveals one more letter
-// - Correct -> auto next (0.8s)
-// - No vibration, positive Traditional Chinese
+// Fixes in v0.4.1:
+// - Remove 'change' submit (iPad blur can trigger)
+// - Force clear input value on each render
+// - Randomize input 'name' to reduce Safari autofill
+// - Add explicit Submit button
 // ---------------------------
 function buildInitialMask(spelling) {
   const n = spelling.length;
@@ -286,6 +285,7 @@ function renderPractice() {
         </div>
 
         <div class="row" style="margin-top:12px;">
+          <button class="big" id="btnSubmit">送出</button>
           <button class="big" id="btnHint">提示一下</button>
           <button class="big" id="btnHome">回首頁</button>
         </div>
@@ -298,6 +298,11 @@ function renderPractice() {
 
   const input = document.getElementById("ans");
   const feedback = document.getElementById("feedback");
+
+  // v0.4.1 anti-autofill/anti-auto-submit
+  input.value = "";
+  input.setAttribute("name", "ans_" + Date.now());
+
   setTimeout(() => input.focus(), 50);
 
   function advanceOrReward() {
@@ -313,7 +318,11 @@ function renderPractice() {
 
   function checkAndAdvance() {
     const user = normalizeAnswer(input.value);
-    if (!user) return;
+    if (!user) {
+      feedback.textContent = "先打一點點也可以🙂";
+      input.focus();
+      return;
+    }
 
     if (user === target) {
       feedback.textContent = "太棒了！✅";
@@ -324,10 +333,12 @@ function renderPractice() {
       feedback.textContent = "差一點～再試一次🙂";
       p.wrongCount = (p.wrongCount ?? 0) + 1;
       saveProgress();
-      // keep input for editing (less frustration)
+      // keep input for editing
+      input.focus();
     }
   }
 
+  // Enter to submit (works on desktop & iPad)
   input.addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
       e.preventDefault();
@@ -335,7 +346,9 @@ function renderPractice() {
     }
   });
 
-  input.addEventListener("change", checkAndAdvance);
+  // IMPORTANT: do NOT use change/blur/input auto-submit (iPad can misfire)
+
+  document.getElementById("btnSubmit").onclick = () => checkAndAdvance();
 
   document.getElementById("btnHint").onclick = () => {
     if (plan.hintUsed >= 2) {
