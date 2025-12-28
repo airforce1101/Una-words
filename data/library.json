@@ -1,4 +1,9 @@
 {
-  "20251228-001": { "s": "apple", "m": "蘋果", "ipa": "/ˈæpəl/", "archived": false },
-  "20251228-002": { "s": "cat",   "m": "貓",   "ipa": "/kæt/",   "archived": false }
+  "20251228-001": { "s": "hair", "m": "頭髮", "ipa": "", "archived": false },
+  "20251228-002": { "s": "nose", "m": "鼻子", "ipa": "", "archived": false },
+  "20251228-003": { "s": "ear", "m": "耳朵", "ipa": "", "archived": false },
+  "20251228-004": { "s": "after", "m": "在..後", "ipa": "", "archived": false },
+  "20251228-005": { "s": "diet", "m": "飲食、節食", "ipa": "", "archived": false },
+  "20251228-006": { "s": "plate", "m": "盤子", "ipa": "", "archived": false },
+  "20251228-007": { "s": "christmas", "m": "聖誕節", "ipa": "", "archived": false }
 }
